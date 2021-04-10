@@ -18,13 +18,15 @@ Open iTerm2. In the menu, click **Scripts** > **Manage** > **New Python Script**
 
 When prompted, select **Full Environment** then select **Long-Running Daemon**
 
-Specify the **Save As** name `cryptoticker` and **PyPI Dependencies** as `aiohttp`. If you haven't downloaded a python runtime for iTerm, you'll be prompted to do so.
+Specify the **Save As** name `cryptoticker` and **PyPI Dependencies** as `aiohttp`. `aiodns` is optional, but recommended. 
+
+If you haven't downloaded a python runtime for iTerm, you'll be prompted to do so.
 
 Copy the cryptoticker.py to the iterm environment:  
 ```  
 cp ./cryptoticker.py ~/Library/Application Support/iTerm2/Scripts/cryptoticker/cryptoticker/cryptoticker.py  
 ```  
-5. Move cryptoticker into the AutoLaunch folder (create this directory if it does not exist)  
+Move cryptoticker into the AutoLaunch folder (create this directory if it does not exist)  
 ```  
 mv ~/Library/Application Support/iTerm2/Scripts/cryptoticker ~/Library/Application Support/iTerm2/Scripts/AutoLaunch/cryptoticker
 ```
