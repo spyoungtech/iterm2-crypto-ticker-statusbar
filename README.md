@@ -9,7 +9,7 @@ Cryto ticker for your iterm status bar. Backed by ethereumdb. Supports multiple 
 # Setup
 
 These instructions are provided for convenience. 
-For more information see the [iterm2 documentation](https://iterm2.com/documentation-status-bar.html).
+For more information see the [iterm2 documentation](https://iterm2.com/python-api/tutorial/index.html#tutorial-index).
 
 
 ## Installing the script
