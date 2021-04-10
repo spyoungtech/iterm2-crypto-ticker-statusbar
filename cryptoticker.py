@@ -5,20 +5,22 @@ import time
 import random
 from collections import defaultdict
 import copy
+
 COIN_SYMBOLS = defaultdict(str)
 
-COIN_SYMBOLS.update({
-    "ETH": "⧫",
-    "BCH": "₿c",
-    "LTC": "Ł",
-    "BTC": "₿",
-})
+COIN_SYMBOLS.update(
+    {
+        "ETH": "⧫",
+        "BCH": "₿c",
+        "LTC": "Ł",
+        "BTC": "₿",
+    }
+)
 
 
 CURRENCY_SYMBOLS = defaultdict(lambda: "$")
 CURRENCY_SYMBOLS.update(copy.deepcopy(COIN_SYMBOLS))
 CURRENCY_SYMBOLS.update({'EUR': '€', 'JPY': '¥', 'GBP': '£', 'USD': '$'})
-
 
 
 UP = "▲"
@@ -27,7 +29,53 @@ DOWN = "▼"
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36 Edg/89.0.774"
 
 
-async def get_price(coin, currency="USD"):
+def _make_key(args, kwargs):
+    """
+    Variation of functools._make_key
+    """
+    _kwd_mark = (object(),)
+    key = args
+    if kwargs:
+        key += _kwd_mark
+        for item in kwargs.items():
+            key += item
+    return tuple(key)
+
+
+def timed_cache(ttl: int = 10, maxsize: int = 100):
+    """
+    Variation of functools.lru_cache, but expires with time.
+    """
+    if maxsize:
+        assert maxsize > 0
+    arg_cache = {}
+
+    def deco(f):
+        async def wrapper(*args, _ttl=None, **kwargs):
+            nonlocal arg_cache
+            if _ttl is None:
+                _ttl = ttl
+            key = _make_key(args, kwargs)
+            if key in arg_cache:
+                expiration, result = arg_cache[key]
+                if time.time() < expiration:
+                    return result
+                else:
+                    arg_cache.pop(key)
+            expiration = time.time() + _ttl
+            result = await f(*args, **kwargs)
+            if maxsize and len(arg_cache) >= maxsize:
+                arg_cache.pop(list(arg_cache)[0])
+            arg_cache[key] = (expiration, result)
+            return result
+
+        return wrapper
+
+    return deco
+
+
+@timed_cache(ttl=10, maxsize=100)
+async def get_price(coin: str, currency="USD"):
     async with aiohttp.ClientSession() as session:
         t = int(time.time()) - 1
         r = random.randint(100, 999)
@@ -41,9 +89,11 @@ async def get_price(coin, currency="USD"):
 async def main(connection):
     # Define the configuration knobs:
     coins = list(COIN_SYMBOLS.keys())
-    knobs = [iterm2.StringKnob('Coin (e.g. "BTC")', "ETH", "ETH", "coin"),
-             iterm2.StringKnob('Currency (e.g. "USD")', "USD", "USD", "currency")
-             ]
+    knobs = [
+        iterm2.StringKnob('Coin (e.g. "BTC")', "ETH", "ETH", "coin"),
+        iterm2.StringKnob('Currency (e.g. "USD")', "USD", "USD", "currency"),
+        iterm2.PositiveFloatingPointKnob("Update interval (seconds)", 10, "update_interval")
+    ]
 
     knobs.append(iterm2.CheckboxKnob('show price', True, 'price'))
 
@@ -56,7 +106,7 @@ async def main(connection):
         f"Updates every 10 seconds. Uses ethereumdb api",
         knobs=knobs,
         exemplar="Crypto Ticker",
-        update_cadence=10,
+        update_cadence=1,
         identifier="com.spyoung.crypto-ticker",
     )
 
@@ -71,7 +121,15 @@ async def main(connection):
             currency = knobs['currency']
         else:
             currency = 'USD'
-        price_data = await get_price(coin, currency)
+
+        if 'update_interval' in knobs and knobs['update_interval']:
+            ttl = int(knobs['update_interval'])
+            if ttl <= 0:
+                ttl = 10
+            ttlkwd = {'_ttl': ttl}
+        else:
+            ttlkwd = {}
+        price_data = await get_price(coin, currency, **ttlkwd)
         # format the data according to settings
         pair = price_data['pair']
         currency_symbol = CURRENCY_SYMBOLS.get(currency, '$')
@@ -97,8 +155,8 @@ async def main(connection):
                 cs += f' {change_percent}%'
             s += f' {cs}'
 
-
-        without_pair = s.replace(price_data['pair'], '')
+        # Allow a smaller display without the pair (e.g. ETH-USD)
+        without_pair = s.replace(f" {pair}", '')
         return [s, without_pair]
 
     # Register the component.
