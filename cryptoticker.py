@@ -91,7 +91,7 @@ async def main(connection):
             cs = f'{symbol}'
             if 'change' in knobs and knobs['change']:
                 change = round(price_data['change'], 3)
-                cs += f' ${change}'
+                cs += f' {currency_symbol}{change}'
             if 'changePercent' in knobs and knobs['changePercent']:
                 change_percent = round(price_data['changePercent'], 4)
                 cs += f' {change_percent}%'
