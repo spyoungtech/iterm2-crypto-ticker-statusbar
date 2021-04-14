@@ -5,7 +5,8 @@ import time
 import random
 from collections import defaultdict
 import copy
-
+import asyncio
+print('starting')
 COIN_SYMBOLS = defaultdict(str)
 
 COIN_SYMBOLS.update(
@@ -41,6 +42,10 @@ def _make_key(args, kwargs):
             key += item
     return tuple(key)
 
+class CacheInfo:
+    def __init__(self):
+        self.hits = 0
+        self.misses = 0
 
 def timed_cache(ttl: int = 10, maxsize: int = 100):
     """
@@ -48,26 +53,35 @@ def timed_cache(ttl: int = 10, maxsize: int = 100):
     """
     if maxsize:
         assert maxsize > 0
-    arg_cache = {}
-
+    result_cache = {}
+    cache_info = CacheInfo()
+    cache_lock = asyncio.Lock()
     def deco(f):
         async def wrapper(*args, _ttl=None, **kwargs):
-            nonlocal arg_cache
+            nonlocal result_cache
+            nonlocal cache_info
             if _ttl is None:
                 _ttl = ttl
             key = _make_key(args, kwargs)
-            if key in arg_cache:
-                expiration, result = arg_cache[key]
-                if time.time() < expiration:
-                    return result
-                else:
-                    arg_cache.pop(key)
-            expiration = time.time() + _ttl
-            result = await f(*args, **kwargs)
-            if maxsize and len(arg_cache) >= maxsize:
-                arg_cache.pop(list(arg_cache)[0])
-            arg_cache[key] = (expiration, result)
+            async with cache_lock:
+                if key in result_cache:
+                    expiration, result = result_cache[key]
+                    if time.time() < expiration:
+                        print('cache hit', key)
+                        cache_info.hits += 1
+                        return result
+                    else:
+                        result_cache.pop(key)
+                print('cache miss', key)
+                print('Hits:', cache_info.hits, "Misses:", cache_info.misses)
+                cache_info.misses += 1
+                expiration = time.time() + _ttl
+                result = await f(*args, **kwargs)
+            if maxsize and len(result_cache) >= maxsize:
+                result_cache.pop(list(result_cache)[0])
+            result_cache[key] = (expiration, result)
             return result
+        wrapper.cache_info = cache_info
         return wrapper
     return deco
 
@@ -81,9 +95,11 @@ async def get_price(coin: str, currency="USD", ticker_range="24h"):
     t = int(time.time()) - 1
     r = random.randint(100, 999)
     eth_url = f'https://api.ethereumdb.com/v1/ticker?pair={coin}-{currency}&range={ticker_range}&t={t}{r}'
+    print('req start', eth_url)
     async with session.get(eth_url, headers={'User-Agent': UA}) as resp:
         resp.raise_for_status()
         data = await resp.json()
+    print('req done', eth_url)
     return data
 
 
@@ -107,7 +123,7 @@ async def main(connection):
         f"Updates every 10 seconds. Uses ethereumdb api",
         knobs=knobs,
         exemplar="Crypto Ticker",
-        update_cadence=1,
+        update_cadence=None,
         identifier="com.spyoung.crypto-ticker",
     )
 
@@ -170,5 +186,5 @@ async def main(connection):
     # Register the component.
     await component.async_register(connection, coro)
 
-
+print('running')
 iterm2.run_forever(main)
