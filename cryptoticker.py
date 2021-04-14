@@ -57,9 +57,11 @@ def timed_cache(ttl: int = 10, maxsize: int = 100):
     cache_info = CacheInfo()
     cache_lock = asyncio.Lock()
     def deco(f):
-        async def wrapper(*args, _ttl=None, **kwargs):
+        async def wrapper(*args, _ttl=None, _no_cache=False, **kwargs):
             nonlocal result_cache
             nonlocal cache_info
+            if _no_cache:
+                return await f(*args, **kwargs)
             if _ttl is None:
                 _ttl = ttl
             key = _make_key(args, kwargs)
@@ -117,13 +119,23 @@ async def main(connection):
     data_opts = ['high', 'low', 'change', 'changePercent', 'open']
     for opt in data_opts:
         knobs.append(iterm2.CheckboxKnob(f'show {opt}', False, opt))
+
+    async def get_exemplar():
+        price_data = await get_price('ETH', _no_cache=True)
+        if price_data['change'] >= 0:
+            symbol = UP
+        else:
+            symbol = DOWN
+        price = round(price_data['price'], 4)
+        change_percent = round(price_data['changePercent'], 4)
+        return f'{COIN_SYMBOLS["ETH"]} ETH-USD: ${price} {symbol} {change_percent}%'
+
     component = iterm2.StatusBarComponent(
-        short_description="Show crypto tickers in the status bar",
-        detailed_description="Show the price, changes, and other data about a given cryto coins in the status bar. "
-        f"Updates every 10 seconds. Uses ethereumdb api",
+        short_description="Crypto Ticker",
+        detailed_description="Show the price and other data for a given coin. Supports several coins and currencies.",
         knobs=knobs,
-        exemplar="Crypto Ticker",
-        update_cadence=None,
+        exemplar=await get_exemplar(),
+        update_cadence=60,
         identifier="com.spyoung.crypto-ticker",
     )
 
