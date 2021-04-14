@@ -68,30 +68,31 @@ def timed_cache(ttl: int = 10, maxsize: int = 100):
                 arg_cache.pop(list(arg_cache)[0])
             arg_cache[key] = (expiration, result)
             return result
-
         return wrapper
-
     return deco
 
+session = None
 
 @timed_cache(ttl=10, maxsize=100)
-async def get_price(coin: str, currency="USD"):
-    async with aiohttp.ClientSession() as session:
-        t = int(time.time()) - 1
-        r = random.randint(100, 999)
-        eth_url = f'https://api.ethereumdb.com/v1/ticker?pair={coin}-{currency}&range=24h&t={t}{r}'
-        async with session.get(eth_url, headers={'User-Agent': UA}) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
+async def get_price(coin: str, currency="USD", ticker_range="24h"):
+    global session
+    if session is None:
+        session = aiohttp.ClientSession()
+    t = int(time.time()) - 1
+    r = random.randint(100, 999)
+    eth_url = f'https://api.ethereumdb.com/v1/ticker?pair={coin}-{currency}&range={ticker_range}&t={t}{r}'
+    async with session.get(eth_url, headers={'User-Agent': UA}) as resp:
+        resp.raise_for_status()
+        data = await resp.json()
     return data
 
 
 async def main(connection):
     # Define the configuration knobs:
-    coins = list(COIN_SYMBOLS.keys())
     knobs = [
         iterm2.StringKnob('Coin (e.g. "BTC")', "ETH", "ETH", "coin"),
         iterm2.StringKnob('Currency (e.g. "USD")', "USD", "USD", "currency"),
+        iterm2.StringKnob('range (10mi,1h,12h,24h,1w,1m,3m,1y,ytd,all)', "24h", "24h", "ticker_range"),
         iterm2.PositiveFloatingPointKnob("Update interval (seconds)", 10, "update_interval")
     ]
 
@@ -121,7 +122,10 @@ async def main(connection):
             currency = knobs['currency']
         else:
             currency = 'USD'
-
+        if "ticker_range" in knobs:
+            ticker_range = knobs['ticker_range']
+        else:
+            ticker_range = "24h"
         if 'update_interval' in knobs and knobs['update_interval']:
             ttl = int(knobs['update_interval'])
             if ttl <= 0:
@@ -129,7 +133,8 @@ async def main(connection):
             ttlkwd = {'_ttl': ttl}
         else:
             ttlkwd = {}
-        price_data = await get_price(coin, currency, **ttlkwd)
+
+        price_data = await get_price(coin, currency, ticker_range, **ttlkwd)
         # format the data according to settings
         pair = price_data['pair']
         currency_symbol = CURRENCY_SYMBOLS.get(currency, '$')
@@ -155,9 +160,12 @@ async def main(connection):
                 cs += f' {change_percent}%'
             s += f' {cs}'
 
-        # Allow a smaller display without the pair (e.g. ETH-USD)
-        without_pair = s.replace(f" {pair}", '')
-        return [s, without_pair]
+        if COIN_SYMBOLS[coin]:
+            # Allow a smaller display without the pair (e.g. ETH-USD)
+            # But only when there is an existing symbol
+            without_pair = s.replace(f" {pair}", '')
+            return [s, without_pair]
+        return s
 
     # Register the component.
     await component.async_register(connection, coro)
